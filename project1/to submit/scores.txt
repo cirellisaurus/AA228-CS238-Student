@@ -1,0 +1,20 @@
+small 
+best order: [3, 7, 5, 1, 2, 4, 6, 8]
+best bayesian score: -3799.8585386398695
+┌ Warning: small.csv.pdf already exists, overwriting!
+└ @ TikzPictures C:\Users\caris\.julia\packages\TikzPictures\4zjh8\src\TikzPictures.jl:333
+  4.481334 seconds (6.57 M allocations: 441.294 MiB, 2.52% gc time, 11.51% compilation time)
+
+medium
+best order: [8, 9, 7, 4, 11, 1, 10, 3, 2, 6, 12, 5]
+best bayesian score: -42060.016877201066
+┌ Warning: medium.csv.pdf already exists, overwriting!
+└ @ TikzPictures C:\Users\caris\.julia\packages\TikzPictures\4zjh8\src\TikzPictures.jl:333
+ 13.183511 seconds (114.81 M allocations: 7.550 GiB, 11.15% gc time, 3.81% compilation time)
+
+large
+best order: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50]
+best bayesian score: -404192.31703113194
+┌ Warning: large.csv.pdf already exists, overwriting!
+└ @ TikzPictures C:\Users\caris\.julia\packages\TikzPictures\4zjh8\src\TikzPictures.jl:333
+2659.940728 seconds (31.62 G allocations: 2.167 TiB, 16.17% gc time, 0.02% compilation time)

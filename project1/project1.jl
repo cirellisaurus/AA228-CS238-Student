@@ -48,22 +48,39 @@ function compute(infile, outfile_gph)
     end
     #println(r)
 
-
-
     # put xi, variable names, and r, instantiation counts, into Variable struct
     vars = Variable(names(df), r)
     # println(vars)
     # println(vars.names)
     # println(vars.r)
 
-    #create ordering array for K2Search that is just the order of the variables as they show up in the df
-    ordering_array = collect(1:length(vars.names))
+    index_array = collect(1:length(vars.names))
 
-    #put ordering array into K2Search struct
-    ordering_K2Search = K2Search(ordering_array)
 
-    #find optimal structure 
-    network_DiGraph = Perform_K2_Search(ordering_K2Search, vars, D_matrix)
+    network_DiGraph, score = Perform_K2_Search(index_array, vars, D_matrix)
+    order_best = index_array
+    score_best = score
+    graph_best = network_DiGraph
+    println("baseline order: $index_array")
+    println("baseline bayesian score: $score_best")
+    for attempt in 1:3
+        #create ordering array for K2Search 
+        ordering_array = shuffle(index_array)
+        #find optimal structure 
+        network_DiGraph, score = Perform_K2_Search(ordering_array, vars, D_matrix)
+        println("bayesian score: $score")
+        if score > score_best
+            # update the current score with the best score and update best order 
+            score_best = score
+            order_best = ordering_array
+            graph_best = network_DiGraph
+
+        end
+    end 
+    println("best order: $order_best")
+    println("best bayesian score: $score_best")
+
+
 
     
     #graph for testing: 
@@ -76,20 +93,20 @@ function compute(infile, outfile_gph)
     # M = computeM(vars, network_DiGraph, D_matrix)
 
     #report bayesian score for optimal structure
-    b = bayesian_score(vars, network_DiGraph, D_matrix)
+    #b = bayesian_score(vars, network_DiGraph, D_matrix)
 
-    println("bayesian score: $b")
+    #println("bayesian score: $b")
 
     #create a Dict for write_gph that matches the var names to their indices
-    idx2names_Dict = Dict(zip(ordering_array, vars.names))
+    idx2names_Dict = Dict(zip(index_array, vars.names))
 
     #write gph file 
-    write_gph(network_DiGraph, idx2names_Dict, outfile_gph)
+    write_gph(graph_best, idx2names_Dict, outfile_gph)
 
 
     #create graph visualization TikZGraphs
     # documentation: https://github.com/JuliaTeX/TikzGraphs.jl/blob/master/doc/TikzGraphs.ipynb
-    t = TikzGraphs.plot(network_DiGraph)
+    t = TikzGraphs.plot(graph_best)
 
     #save graph to pdf 
     TikzPictures.save(PDF(infile), t)
@@ -99,27 +116,6 @@ function compute(infile, outfile_gph)
     #TikzPictures.save(TEX("graph"), t)
 
 end
-
-"""
-Algorithm 4.1. A function for extracting
-the statistics, or counts,
-from a discrete data set D, assuming
-a Bayesian network with variables
-vars and structure G. The
-data set is an n × m matrix, where
-n is the number of variables and
-m is the number of data points.
-This function returns an array M of
-length n. The ith component consists
-of a qi × ri matrix of counts.
-The sub2ind(siz, x) function returns
-a linear index into an array
-with dimensions specified by siz
-given coordinates x. It is used to
-identify which parental instantiation
-is relevant to a particular data
-point and variable.
-"""
 
 #Struct for storing data variable information 
 struct Variable
@@ -133,35 +129,8 @@ function sub2ind(siz, x)
 	return dot(k, x .- 1) + 1
 end
 
-
-function computeM(vars, G, D::Matrix{Int})
-    # set n equal to number of columns in data
-    n = size(D, 2)
-    #put counts for vars into array
-    r = vars.r
-    #println("r: $r")
-    #println("r type: $(typeof(r))")
-
-    # calculate q by calculating the product of the number of parential instantiations for node i for each node 
-    q = Int.(ones(n))
-    #println("q type: $(typeof(q))")
-
-    # q = [prod([r[j] for j in inneighbors(G,i)]) for i in 1:n]
-
-    for i in 1:n
-        for j in inneighbors(G,i)
-            q[i] = (q[i]*r[j])
-        end
-    end
-    #println("q: $q")
-    #println("q type: $(typeof(q))")
-
-    #create M array of n matrices (one for each var), where each matrix has dimensions of q_i x r_i 
-    M = [zeros(q[i], r[i]) for i in 1:n]
-    #println("M: $M")
-    #println("M type: $(typeof(M))")
-
-
+#This function computes the count matrix M 
+function computeM(r, G, D::Matrix{Int}, M, n)
     #for each sample (row)
     for sample in eachrow(D)
         #for each variable (column)
@@ -177,22 +146,11 @@ function computeM(vars, G, D::Matrix{Int})
             if !isempty(parents)
                 
                 # setting dims of array equal to r1xr2...
-                dims = r[parents]
-                #array = Int.(zeros(prod(dims)))
-                #println(array)
-                #println("parent_instantiations: $parent_instantiations")
-                #println(" type: $(typeof(dims))")
-                #println("dims size: $(size(dims))")
-                
+                dims = r[parents]                
                 #println("dims: $dims")
                 #println("dims type: $(typeof(dims))")
                 #println("dims size: $(size(dims))")
-                #instantiation_array = reshape(array, tuple(dims...))
-                #println("instantiation array: $instantiation_array")
-                # Create a LinearIndices object of size of dims array
-                #lin_indices = LinearIndices(instantiation_array)
-                #println("lin_indices: $lin_indices")
-                #println("lin_indices type: $(typeof(lin_indices))")
+
                 # Define the multi-dimensional indices
                 subs = sample[parents]
                 #println("subs: $subs")
@@ -217,118 +175,108 @@ function computeM(vars, G, D::Matrix{Int})
     
 end
 
-"""
-A function for generating
-    a prior αijk where all entries
-    are 1. The array of matrices
-    that this function returns takes the
-    same form as the statistics generated
-    by algorithm 4.1. To determine
-    the appropriate dimensions, the
-    function takes as input the list of
-    variables vars and structure G.
-"""
-function prior(vars, G)
-    n = length(vars.names)
-    r = [vars.r[i] for i in 1:n]
-    q = [prod([r[j] for j in inneighbors(G,i)]) for i in 1:n]
-    return [ones(q[i], r[i]) for i in 1:n]
-end
-
-"""
-Algorithm 5.1. An algorithm
-for computing the Bayesian score
-for a list of variables vars and
-a graph G given data D. This
-method uses a uniform prior
-αijk = 1 for all i, j, and k
-as generated by algorithm 4.2.
-The loggamma function is provided
-by SpecialFunctions.jl. Chapter
-4 introduced the statistics
-and prior functions. Note that
-log(G(α)/G(α + m)) = log G(α) −
-log G(α + m), and that log G(1) =
-0.
-"""
-function bayesian_score_component(M, α)
-    p = sum(loggamma.(α + M))
-    p -= sum(loggamma.(α))
-    p += sum(loggamma.(sum(α,dims=2)))
-    p -= sum(loggamma.(sum(α,dims=2) + sum(M,dims=2)))
-    return p
+#this function calculates the Bayesian score summation 
+function calculate_p(M, prior, n)
+    total = 0
+    for i in 1:n
+        total += sum(loggamma.(prior[i] + M[i])) - sum(loggamma.(prior[i])) + sum(loggamma.(sum(prior[i],dims=2))) - sum(loggamma.(sum(prior[i],dims=2) + sum(M[i],dims=2)))
     end
-    function bayesian_score(vars, G, D)
-    n = length(vars.names)
-    M = computeM(vars, G, D)
-    α = prior(vars, G)
-    return sum(bayesian_score_component(M[i], α[i]) for i in 1:n)
+    return total
 end
 
-"""
-Algorithm 5.2. K2 search of the
-space of directed acyclic graphs using
-a specified variable ordering.
-This variable ordering imposes a
-topological ordering in the resulting
-graph. The fit function takes
-an ordered list variables vars and
-a data set D. The method starts
-with an empty graph and iteratively
-adds the next parent that
-maximally improves the Bayesian
-score.
-"""
 
-struct K2Search
-    ordering::Vector{Int} # variable ordering
+function bayesian_score(vars, G, D)
+    # set n equal to number of columns in data
+    n = size(D, 2)
+    #put counts for vars into array
+    r = vars.r
+    #println("r: $r")
+    #println("r type: $(typeof(r))")
+
+    # calculate q by calculating the product of the number of parential instantiations for node i for each node 
+    q = Int.(ones(n))
+    #println("q type: $(typeof(q))")
+
+    for i in 1:n
+        for j in inneighbors(G,i)
+            q[i] = (q[i]*r[j])
+        end
+    end
+    #println("q: $q")
+    #println("q type: $(typeof(q))")
+
+    #create M array of n matrices (one for each var), where each matrix has dimensions of q_i x r_i 
+    M = [zeros(q[i], r[i]) for i in 1:n]
+    #println("M: $M")
+    #println("M type: $(typeof(M))")
+    M = computeM(r, G, D, M, n)
+
+    prior = [ones(q[i], r[i]) for i in 1:n]
+
+    p = calculate_p(M, prior, n)
+    return p 
 end
 
 # method is an argument of type K2Search, which means that the input to this argument must be an instance of the K2Search struct.
 # vars is an argument of type Variable, which means that the input to this argument must be an instance of the Variable struct.
 # D is an argument of type Matrix{Int}, which means that the input to this argument must be a two-dimensional array of integers.
 # D, the data set is an m x n matrix, where n is the number of variables and m is the number of data points
-function Perform_K2_Search(method::K2Search, vars, D)
+function Perform_K2_Search(ordering, vars, D)
     #create a directed graph (SimpleDiGraph) with length(vars) number of nodes
     G = SimpleDiGraph(length(vars.names))
     #ind = index, child = element
+    #for each child starting with the 2nd variable in the ordering
+    score_curr = -Inf
+    for (ind,child) in enumerate(ordering[2:end])
 
-    
-    for (ind,child) in enumerate(method.ordering[2:end])
-        #y = rand(-100:-1)
-        y = bayesian_score(vars, G, D)
+        #calculate bayesian score of current graph
+        score_curr = bayesian_score(vars, G, D)
         #print("Graph: $G \n")
         #print("Current Bayesian score of graph: $y \n")
+
+        #while score can still be improved 
         while true
-            y_best, parent_best = -Inf, 0
-            #for parents 1 through ind
-            for parent in method.ordering[1:ind]
+            # we set our baseline Bayesian score to -infinity and try to improve from there 
+            score_best = -Inf
+            # set best parent to placeholder value of 0
+            parent_best = 0           
+            #for parents at index 1 through index ind in the ordering array 
+            for parent in ordering[1:ind]
                 
+                #if there is no edge between the current parent and current child
                 #has_edge(G, parent, child) is a function that checks if there is an edge in a graph G between the vertices parent and child
                 if !has_edge(G, parent, child)
+                    # Add edge to our graph 
                     add_edge!(G, parent, child)
-                    #check for cycles here? 
-                    y_new = bayesian_score(vars, G, D)
-                    #y_new = rand(-100:1)
-                    #print("index: $ind, curr child: $child, potential parent, $parent, current Bayes score, $y_new\n")
-                    if y_new > y_best
-                        y_best, parent_best = y_new, parent
+                    #calculate what the new score is with the new edge added 
+                    score_new = bayesian_score(vars, G, D)
+                    #print("index: $ind, curr child: $child, potential parent, $parent, current Bayes score, $score\n")
+
+                    # if the new score is better than our current best score
+                    if score_new > score_best
+                        #update the best score and update who the best parent is for that child
+                        score_best = score_new
+                        parent_best = parent
                     end
+                    #Remove edge to our graph - we don't want to actually add the edge until we are sure the edge we are adding is the best edge
                     rem_edge!(G, parent, child)
                 end
             end
-            if y_best > y
-                y = y_best
+            #if the score is better when we connect child with best parent
+            if score_best > score_curr
+                # update the current score with the best score and add the edge connecting the best parent to the child 
+                score_curr = score_best
                 #print("best parent, $parent_best, current child, $child, best Bayes score, $y_best. \n")
                 #add an edge between nodes parent_best and child in a graph G
                 add_edge!(G, parent_best, child)
                 
+            #if score is not better, move onto next child
             else
                 break
             end
         end
     end
-    return G
+    return G, score_curr
 end
 
 
